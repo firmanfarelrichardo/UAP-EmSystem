@@ -1,0 +1,3 @@
+// NO = kabel merah water pump
+// COM = VCC arduino uno / daya eksternal
+// kabel hitam water pump -> GND Arduino uno
