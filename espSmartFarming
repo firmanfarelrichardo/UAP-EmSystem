@@ -1,0 +1,121 @@
+#define BLYNK_TEMPLATE_ID "TMPL6vBmmKS2r"
+#define BLYNK_TEMPLATE_NAME "ESP32 Farming FIX"
+#define BLYNK_AUTH_TOKEN "IxZFcJ5hPIoVRojVnhgRVebA-mP09dvI"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <DHT.h>
+#include <ESP32Servo.h>
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "Wokwi-GUEST";
+char pass[] = "";
+
+BlynkTimer timer;
+DHT dht(4, DHT22);
+Servo myServo;
+
+const int servoPin = 5;
+const int soilPin = 35;
+const int relayPin = 2;
+
+bool manualPump = false;
+bool manualServo = false;
+int servoManualPos = 0;
+
+float suhuVal = 0;
+float humVal = 0;
+int soilVal = 0;
+String pompaStatus = "OFF";
+String atapStatus = "Tutup";
+
+BLYNK_WRITE(V5) {
+  manualPump = param.asInt();
+  digitalWrite(relayPin, manualPump);
+  pompaStatus = manualPump ? "Pompa ON (Manual)" : "Pompa OFF (Manual)";
+  Blynk.virtualWrite(V4, pompaStatus);
+}
+
+BLYNK_WRITE(V6) {
+  manualServo = true;
+  servoManualPos = param.asInt() ? 90 : 0;
+  myServo.write(servoManualPos);
+  atapStatus = param.asInt() ? "Atap Terbuka (Manual)" : "Atap Tertutup (Manual)";
+  Blynk.virtualWrite(V2, atapStatus);
+}
+
+void readDHT() {
+  float suhu = dht.readTemperature();
+  float hum = dht.readHumidity();
+  if (isnan(suhu) || isnan(hum)) return;
+
+  suhuVal = suhu;
+  humVal = hum;
+
+  Blynk.virtualWrite(V0, suhu);
+  Blynk.virtualWrite(V1, hum);
+
+  if (!manualPump) {
+    if (hum < 40) {
+      digitalWrite(relayPin, HIGH);
+      pompaStatus = "Pompa ON (Auto)";
+    } else {
+      digitalWrite(relayPin, LOW);
+      pompaStatus = "Pompa OFF (Auto)";
+    }
+    Blynk.virtualWrite(V4, pompaStatus);
+  }
+
+  if (!manualServo) {
+    if (suhu > 40) {
+      myServo.write(90);
+      atapStatus = "Atap Terbuka (Panas)";
+    } else {
+      myServo.write(0);
+      atapStatus = "Atap Tertutup (Normal)";
+    }
+    Blynk.virtualWrite(V2, atapStatus);
+  }
+
+  // Serial Monitor Sinkron
+  Serial.println("=== DATA DHT ===");
+  Serial.printf("Suhu       : %.1f °C\n", suhuVal);
+  Serial.printf("Kelembapan : %.1f %%\n", humVal);
+  Serial.println("---------------------");
+  delay(2000);
+
+  Serial.println("=== DATA ATAP & POMPA ===");
+  Serial.printf("Atap       : %s\n", atapStatus.c_str());
+  Serial.printf("Pompa      : %s\n", pompaStatus.c_str());
+  Serial.println("---------------------");
+  delay(2000);
+}
+
+void readSoilMoisture() {
+  soilVal = analogRead(soilPin);
+  Blynk.virtualWrite(V3, soilVal);
+
+  Serial.println("=== DATA TANAH ===");
+  Serial.printf("Soil Moisture : %d\n", soilVal);
+  Serial.println("---------------------");
+  delay(2000);
+}
+
+void setup() {
+  Serial.begin(115200);
+  Blynk.begin(auth, ssid, pass);
+
+  dht.begin();
+  myServo.attach(servoPin);
+  pinMode(relayPin, OUTPUT);
+
+  timer.setInterval(3000L, readDHT);
+  timer.setInterval(3000L, readSoilMoisture);
+
+  delay(2000);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
