@@ -1,0 +1,122 @@
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <DHT.h>
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ========================
+// KONFIGURASI WIFI DAN BLYNK
+// ========================
+char auth[] = "ISI_DENGAN_BLYNK_TOKEN";
+char ssid[] = "NAMA_WIFI";
+char pass[] = "PASSWORD_WIFI";
+
+// ========================
+// KONFIGURASI PIN
+// ========================
+#define DHTPIN D4        // GPIO2
+#define DHTTYPE DHT22
+#define LDR_PIN A0
+#define RELAY D3
+#define TRIG_PIN D5
+#define ECHO_PIN D6
+#define RED_LED D7
+#define GREEN_LED D8
+#define SERVO_PIN D1
+
+DHT dht(DHTPIN, DHTTYPE);
+Servo pintuServo;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// ========================
+// SETUP
+// ========================
+void setup() {
+  Serial.begin(9600);
+  Blynk.begin(auth, ssid, pass);
+
+  pinMode(LDR_PIN, INPUT);
+  pinMode(RELAY, OUTPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  dht.begin();
+  lcd.begin(16, 2);
+  lcd.backlight();
+
+  pintuServo.attach(SERVO_PIN);
+  pintuServo.write(0); // Tutup pintu di awal
+
+  lcd.setCursor(0, 0);
+  lcd.print("SmartHome System");
+  delay(2000);
+  lcd.clear();
+}
+
+// ========================
+// LOOP UTAMA
+// ========================
+void loop() {
+  Blynk.run();
+
+  float suhu = dht.readTemperature();
+  int ldrValue = analogRead(LDR_PIN);
+
+  // Kirim ke Blynk
+  Blynk.virtualWrite(V0, suhu);
+  Blynk.virtualWrite(V1, ldrValue);
+
+  // =============== KONDISI LDR =================
+  if (ldrValue < 500) {
+    digitalWrite(RELAY, HIGH);
+  } else {
+    digitalWrite(RELAY, LOW);
+  }
+
+  // =============== ULTRASONIK =================
+  long durasi, jarak;
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  durasi = pulseIn(ECHO_PIN, HIGH);
+  jarak = durasi * 0.034 / 2;
+
+  Blynk.virtualWrite(V2, jarak);
+
+  if (jarak > 0 && jarak < 20) {
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, HIGH);
+    pintuServo.write(90);
+    lcd.setCursor(0, 0);
+    lcd.print("Pintu Dibuka     ");
+    Blynk.virtualWrite(V3, "Terbuka");
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+    pintuServo.write(0);
+    lcd.setCursor(0, 0);
+    lcd.print("Pintu Tertutup   ");
+    Blynk.virtualWrite(V3, "Tertutup");
+  }
+
+  // =============== SUHU PANAS =================
+  if (suhu > 30.0) {
+    lcd.setCursor(0, 1);
+    lcd.print("Suhu Panas! AC ON");
+    digitalWrite(RED_LED, HIGH);
+    delay(300);
+    digitalWrite(RED_LED, LOW);
+    delay(300);
+  } else {
+    lcd.setCursor(0, 1);
+    lcd.print("Suhu Aman        ");
+  }
+
+  delay(500);
+}
