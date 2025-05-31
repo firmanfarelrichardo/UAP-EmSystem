@@ -1,0 +1,133 @@
+#include <DHT.h>
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ====== KONFIGURASI PIN ======
+#define DHTPIN 8            // Pin data DHT22
+#define DHTTYPE DHT22
+const int ldrPin = A1;      // Pin analog LDR
+const int soilPin = A2;     // Pin analog Soil Moisture
+const int servoPin = 9;     // Pin untuk servo
+const int relayPin = 7;     // Pin digital relay (pompa)
+
+// ====== OBJEK SENSOR & AKTUATOR ======
+DHT dht(DHTPIN, DHTTYPE);
+Servo myServo;
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Alamat I2C 0x27 atau 0x3F tergantung modul
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  myServo.attach(servoPin);
+  pinMode(ldrPin, INPUT);
+  pinMode(soilPin, INPUT);
+  pinMode(relayPin, OUTPUT);
+
+  // Inisialisasi LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print(" Smart Farming ");
+  lcd.setCursor(0, 1);
+  lcd.print("  Memulai...   ");
+  delay(2000);
+  lcd.clear();
+
+  Serial.println("=== SISTEM SMART FARMING ===");
+}
+
+void loop() {
+  // ====== 1. SENSOR DHT22 ======
+  float suhu = dht.readTemperature();
+  float kelembapan = dht.readHumidity();
+
+  Serial.println("== Data DHT22 ==");
+  Serial.print("Suhu: ");
+  Serial.print(suhu);
+  Serial.println(" °C");
+
+  Serial.print("Kelembapan: ");
+  Serial.print(kelembapan);
+  Serial.println(" %");
+  Serial.println();
+
+  // Tampilkan di LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Suhu: ");
+  lcd.print(suhu, 1);
+  lcd.print((char)223); // Simbol derajat
+  lcd.print("C");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Kelembapan: ");
+  lcd.print((int)kelembapan);
+  lcd.print("%");
+
+  delay(3000);
+
+  // ====== 2. SENSOR LDR + SERVO ======
+  int ldrValue = analogRead(ldrPin);
+  Serial.println("== Data LDR & Servo ==");
+  Serial.print("Nilai Cahaya (LDR): ");
+  Serial.println(ldrValue);
+
+  // Logika atap otomatis
+  String statusAtap;
+  if (ldrValue > 600 || suhu > 40) {
+    myServo.write(0);  // Tutup atap
+    if (ldrValue > 600) {
+      statusAtap = "GELAP";
+      Serial.println("Atap TERTUTUP (karena GELAP)");
+    } else {
+      statusAtap = "PANAS";
+      Serial.println("Atap TERTUTUP (karena SUHU > 40°C)");
+    }
+  } else {
+    myServo.write(90); // Buka atap
+    statusAtap = "TERBUKA";
+    Serial.println("Atap TERBUKA (Terang & Suhu normal)");
+  }
+
+  // LCD Atap
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Cahaya: ");
+  lcd.print(ldrValue);
+  lcd.setCursor(0, 1);
+  lcd.print("Atap: ");
+  lcd.print(statusAtap);
+
+  Serial.println();
+  delay(3000);
+
+  // ====== 3. SENSOR SOIL + RELAY ======
+  int soilValue = analogRead(soilPin);
+  Serial.println("== Data Kelembaban Tanah & Pompa ==");
+  Serial.print("Soil Moisture: ");
+  Serial.println(soilValue);
+
+  String statusPompa;
+  if (soilValue > 600) {
+    digitalWrite(relayPin, HIGH);  // Pompa aktif
+    statusPompa = "AKTIF";
+    Serial.println("Pompa: AKTIF (Tanah Kering)");
+  } else {
+    digitalWrite(relayPin, LOW);   // Pompa mati
+    statusPompa = "MATI";
+    Serial.println("Pompa: MATI (Tanah Lembab)");
+  }
+
+  // LCD Soil & Pompa
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Soil: ");
+  lcd.print(soilValue);
+  lcd.setCursor(0, 1);
+  lcd.print("Pompa: ");
+  lcd.print(statusPompa);
+
+  Serial.println("--------------------------\n");
+  delay(3000);
+}
