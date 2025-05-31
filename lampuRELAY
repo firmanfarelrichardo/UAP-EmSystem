@@ -1,0 +1,87 @@
+⚠️ PERINGATAN KESELAMATAN!
+Kita akan berurusan dengan listrik AC (220V), jadi:
+
+Gunakan relay yang sesuai, seperti 5V relay jika pakai Arduino.
+
+Selalu matikan listrik sebelum mengutak-atik kabel AC!
+
+Gunakan isolasi, terminal, atau socket relay agar lebih aman.
+
+Jika ragu, minta bantuan orang yang berpengalaman.
+
+🧠 Pengenalan Pin Relay
+Relay biasanya punya 3 terminal untuk switching, yaitu:
+
+Pin	Keterangan
+COM (Common)	Titik tengah, sebagai jalur utama arus
+NO (Normally Open)	Terhubung ke COM saat relay aktif (ON)
+NC (Normally Closed)	Terhubung ke COM saat relay tidak aktif (OFF)
+
+Untuk kontrol lampu otomatis: kita akan menggunakan COM dan NO, agar lampu menyala saat relay aktif.
+
+💡 Skema Pengkabelan Lampu + Relay + Arduino
+1. Bagian Arduino ke Relay Module
+Hubungkan seperti ini:
+
+Arduino	Relay Module
+5V	VCC
+GND	GND
+D-pin (misalnya D7)	IN
+
+Kode akan mengaktifkan pin D7 untuk menghidupkan relay.
+
+2. Bagian Relay ke Listrik AC dan Lampu
+Skema koneksi ke listrik 220V:
+
+lua
+Salin
+Edit
+Listrik AC (220V)
+    |       
+    |----------------------------- Netral (langsung ke lampu)
+    |
+    |           
+    +--> COM (Relay)
+            |
+            +--> NO (Relay)
+                    |
+                    +--> Ke lampu/steker AC (Fasa)
+💥 Penjelasan:
+Kabel Fasa (L) dari listrik PLN dipotong.
+
+Ujung pertama masuk ke COM.
+
+Ujung kedua ke NO, lalu ke lampu atau stop kontak.
+
+Kabel Netral (N) dari PLN langsung ke lampu (tidak lewat relay).
+
+Saat Arduino memberi sinyal HIGH ke relay, maka NO akan terhubung ke COM, dan lampu menyala.
+
+✅ Diagram Sederhana
+rust
+Salin
+Edit
+[ PLN 220V ]
+   |            \
+   |             \______ Netral → langsung ke lampu
+   |
+   +---> COM (relay)
+               |
+               +---> NO (relay) ----> ke lampu/stecker (fasa)
+🧪 Tes Aman
+Gunakan bohlam kecil dulu (misal 5-10W) untuk uji coba.
+
+Pastikan kabel rapi & terisolasi.
+
+Coba nyalakan relay dari Arduino (HIGH/LOW).
+
+Lihat apakah lampu menyala saat relay aktif.
+
+🧠 Tips Tambahan
+Kalau mau lampu mati saat relay aktif, pakai pin NC.
+
+Kamu bisa pasang LED indikator di dekat lampu sebagai status nyala relay.
+
+Kalau relay berisik “klik klik”, itu normal 😄.
+
+Kalau kamu butuh skema visual wiring atau penghubung ke Blynk/dashboard, tinggal bilang ya! Kita bisa lanjut bikin sistem smart home otomatisasi penuh 🔌🏠✨
