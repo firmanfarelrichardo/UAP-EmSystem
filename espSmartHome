@@ -4,18 +4,16 @@
 #include <Servo.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <SPI.h>
+#include <MFRC522.h>
 
-// ========================
-// KONFIGURASI WIFI DAN BLYNK
-// ========================
+// ==== Konfigurasi Blynk & WiFi ====
 char auth[] = "ISI_DENGAN_BLYNK_TOKEN";
 char ssid[] = "NAMA_WIFI";
 char pass[] = "PASSWORD_WIFI";
 
-// ========================
-// KONFIGURASI PIN
-// ========================
-#define DHTPIN D4        // GPIO2
+// ==== Pin dan Konstanta ====
+#define DHTPIN D4
 #define DHTTYPE DHT22
 #define LDR_PIN A0
 #define RELAY D3
@@ -24,17 +22,28 @@ char pass[] = "PASSWORD_WIFI";
 #define RED_LED D7
 #define GREEN_LED D8
 #define SERVO_PIN D1
+#define SS_PIN D2
+#define RST_PIN D0
 
+// ==== Objek Sensor ====
 DHT dht(DHTPIN, DHTTYPE);
 Servo pintuServo;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+MFRC522 rfid(SS_PIN, RST_PIN);
+MFRC522::Uid allowedUID = {4, {0xDE, 0xAD, 0xBE, 0xEF}};  // Ganti sesuai UID kartu RFID
 
-// ========================
-// SETUP
-// ========================
 void setup() {
   Serial.begin(9600);
   Blynk.begin(auth, ssid, pass);
+
+  dht.begin();
+  pintuServo.attach(SERVO_PIN);
+  pintuServo.write(0);
+
+  lcd.begin(16, 2);
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("SmartHome Start");
 
   pinMode(LDR_PIN, INPUT);
   pinMode(RELAY, OUTPUT);
@@ -43,80 +52,87 @@ void setup() {
   pinMode(RED_LED, OUTPUT);
   pinMode(GREEN_LED, OUTPUT);
 
-  dht.begin();
-  lcd.begin(16, 2);
-  lcd.backlight();
+  SPI.begin();
+  rfid.PCD_Init();
 
-  pintuServo.attach(SERVO_PIN);
-  pintuServo.write(0); // Tutup pintu di awal
-
-  lcd.setCursor(0, 0);
-  lcd.print("SmartHome System");
   delay(2000);
   lcd.clear();
 }
 
-// ========================
-// LOOP UTAMA
-// ========================
 void loop() {
   Blynk.run();
 
   float suhu = dht.readTemperature();
-  int ldrValue = analogRead(LDR_PIN);
+  int ldrVal = analogRead(LDR_PIN);
+  long jarak = bacaJarakUltrasonik();
+  bool akses = cekKartuRFID();
 
   // Kirim ke Blynk
   Blynk.virtualWrite(V0, suhu);
-  Blynk.virtualWrite(V1, ldrValue);
-
-  // =============== KONDISI LDR =================
-  if (ldrValue < 500) {
-    digitalWrite(RELAY, HIGH);
-  } else {
-    digitalWrite(RELAY, LOW);
-  }
-
-  // =============== ULTRASONIK =================
-  long durasi, jarak;
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  durasi = pulseIn(ECHO_PIN, HIGH);
-  jarak = durasi * 0.034 / 2;
-
+  Blynk.virtualWrite(V1, ldrVal);
   Blynk.virtualWrite(V2, jarak);
 
-  if (jarak > 0 && jarak < 20) {
-    digitalWrite(RED_LED, LOW);
-    digitalWrite(GREEN_LED, HIGH);
+  // Kontrol Lampu Berdasar LDR
+  digitalWrite(RELAY, (ldrVal < 500) ? HIGH : LOW);
+
+  // Cek akses pintu
+  if (jarak > 0 && jarak < 20 && akses) {
     pintuServo.write(90);
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(RED_LED, LOW);
     lcd.setCursor(0, 0);
-    lcd.print("Pintu Dibuka     ");
+    lcd.print("Akses Disetujui ");
     Blynk.virtualWrite(V3, "Terbuka");
   } else {
+    pintuServo.write(0);
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RED_LED, HIGH);
-    pintuServo.write(0);
     lcd.setCursor(0, 0);
-    lcd.print("Pintu Tertutup   ");
+    lcd.print("Akses Ditolak   ");
     Blynk.virtualWrite(V3, "Tertutup");
   }
 
-  // =============== SUHU PANAS =================
-  if (suhu > 30.0) {
+  // Notifikasi suhu tinggi
+  if (suhu > 30) {
     lcd.setCursor(0, 1);
     lcd.print("Suhu Panas! AC ON");
-    digitalWrite(RED_LED, HIGH);
-    delay(300);
-    digitalWrite(RED_LED, LOW);
-    delay(300);
+    kedipkanLED(RED_LED, 1);
   } else {
     lcd.setCursor(0, 1);
     lcd.print("Suhu Aman        ");
   }
 
   delay(500);
+}
+
+// ==== Fungsi Tambahan ====
+long bacaJarakUltrasonik() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long durasi = pulseIn(ECHO_PIN, HIGH);
+  return durasi * 0.034 / 2;
+}
+
+bool cekKartuRFID() {
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
+    return false;
+
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] != allowedUID.uidByte[i])
+      return false;
+  }
+
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+  return true;
+}
+
+void kedipkanLED(int pin, int durasiDetik) {
+  for (int i = 0; i < durasiDetik * 2; i++) {
+    digitalWrite(pin, !digitalRead(pin));
+    delay(250);
+  }
 }
