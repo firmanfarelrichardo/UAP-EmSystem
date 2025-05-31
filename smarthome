@@ -1,0 +1,121 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+#include <Servo.h>
+
+// ========================
+// KONFIGURASI PIN
+// ========================
+#define DHTPIN 11
+#define DHTTYPE DHT22
+#define LDR_PIN A0
+#define RELAY 3
+
+#define TRIG_PIN 12
+#define ECHO_PIN 13
+
+#define RED_LED 7
+#define GREEN_LED 6
+
+DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Servo pintuServo;  // Servo untuk pintu otomatis
+
+// ========================
+// SETUP
+// ========================
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(LDR_PIN, INPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  pinMode(RELAY, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  dht.begin();
+  lcd.begin(16,2);
+  lcd.backlight();
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Sistem SmartHome");
+  delay(2000);
+  lcd.clear();
+
+  pintuServo.attach(5); // Gunakan pin 9 untuk servo
+  pintuServo.write(0); // Awal posisi pintu tertutup
+}
+
+// ========================
+// LOOP UTAMA
+// ========================
+void loop() {
+  int ldrValue = analogRead(LDR_PIN);
+  float suhu = dht.readTemperature();
+
+  Serial.print("LDR Value: ");
+  Serial.println(ldrValue);
+  Serial.print("Suhu: ");
+  Serial.println(suhu);
+
+  // =============== 1. KONDISI RUANGAN GELAP ===============
+  if (ldrValue < 500) {
+    digitalWrite(RELAY, HIGH);  // Relay aktif (lampu nyala)
+    Serial.println("Kondisi gelap: Lampu dinyalakan (Relay ON)");
+  } else {
+    digitalWrite(RELAY, LOW);   // Relay mati (lampu mati)
+    Serial.println("Cukup terang: Lampu dimatikan (Relay OFF)");
+  }
+
+  // =============== 2. KONDISI ORANG MENDEKATI PINTU ===============
+  long durasi, jarak;
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  durasi = pulseIn(ECHO_PIN, HIGH);
+  jarak = durasi * 0.034 / 2; // dalam cm
+
+  Serial.print("Jarak: ");
+  Serial.print(jarak);
+  Serial.println(" cm");
+
+  if (jarak > 0 && jarak < 20) {
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, HIGH);
+    pintuServo.write(90);  // Buka pintu
+    Serial.println("Orang terdeteksi: Pintu dibuka");
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Pintu Dibuka");
+    delay(2000);
+    lcd.clear();
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+    pintuServo.write(0);   // Tutup pintu
+    Serial.println("Tidak ada orang: Pintu ditutup");
+  }
+
+  // =============== 3. KONDISI SUHU PANAS ===============
+  if (suhu > 30.0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Suhu Panas");
+    lcd.setCursor(0, 1);
+    lcd.print("Nyalakan AC");
+    Serial.println("Suhu panas terdeteksi: Nyalakan AC");
+
+    digitalWrite(RED_LED, HIGH);
+    delay(300);
+    digitalWrite(RED_LED, LOW);
+    delay(300);
+  }
+
+  delay(500);
+}
