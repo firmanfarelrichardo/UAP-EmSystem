@@ -1,0 +1,169 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+#include <Servo.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+// ========================
+// KONFIGURASI PIN
+// ========================
+#define DHTPIN 11
+#define DHTTYPE DHT22
+#define LDR_PIN A0
+#define RELAY 3
+
+#define TRIG_PIN 12
+#define ECHO_PIN 13
+
+#define RED_LED 7
+#define GREEN_LED 6
+
+#define RST_PIN 9
+#define SS_PIN 10  // SDA RFID
+
+DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+Servo pintuServo;
+MFRC522 rfid(SS_PIN, RST_PIN); // RFID Object
+
+// UID kartu yang diizinkan (GANTI sesuai kartumu)
+byte allowedUID[4] = {0xDE, 0xAD, 0xBE, 0xEF}; 
+
+// ========================
+// SETUP
+// ========================
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  rfid.PCD_Init();
+
+  pinMode(LDR_PIN, INPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  pinMode(RELAY, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  dht.begin();
+  lcd.begin(16, 2);
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Sistem SmartHome");
+  delay(2000);
+  lcd.clear();
+
+  pintuServo.attach(5);
+  pintuServo.write(0); // Tutup pintu di awal
+}
+
+// ========================
+// LOOP UTAMA
+// ========================
+void loop() {
+  int ldrValue = analogRead(LDR_PIN);
+  float suhu = dht.readTemperature();
+
+  Serial.print("LDR: "); Serial.println(ldrValue);
+  Serial.print("Suhu: "); Serial.println(suhu);
+
+  // Lampu otomatis
+  if (ldrValue < 500) {
+    digitalWrite(RELAY, HIGH);
+    Serial.println("Kondisi gelap - Lampu ON");
+  } else {
+    digitalWrite(RELAY, LOW);
+    Serial.println("Terang - Lampu OFF");
+  }
+
+  // Sensor Ultrasonik
+  long durasi, jarak;
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  durasi = pulseIn(ECHO_PIN, HIGH);
+  jarak = durasi * 0.034 / 2;
+
+  Serial.print("Jarak: ");
+  Serial.print(jarak);
+  Serial.println(" cm");
+
+  // Validasi RFID
+  bool aksesDiizinkan = cekRFID();
+
+  if (jarak > 0 && jarak < 20 && aksesDiizinkan) {
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(RED_LED, LOW);
+    pintuServo.write(90); // Buka pintu
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Akses Diterima");
+    lcd.setCursor(0, 1);
+    lcd.print("Pintu Terbuka");
+
+    Serial.println("Pintu dibuka: akses sah");
+    delay(3000);
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+    pintuServo.write(0); // Tutup pintu
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Akses Ditolak");
+    lcd.setCursor(0, 1);
+    lcd.print("Dekatkan Kartu");
+
+    Serial.println("Pintu ditutup / akses tidak sah");
+  }
+
+  // Deteksi suhu panas
+  if (suhu > 30.0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Suhu Panas!");
+    lcd.setCursor(0, 1);
+    lcd.print("Nyalakan AC");
+    kedipkanLED(RED_LED, 2);
+    Serial.println("Suhu > 30: Nyalakan AC");
+  }
+
+  delay(500);
+}
+
+// ========================
+// FUNGSI TAMBAHAN
+// ========================
+bool cekRFID() {
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
+    return false;
+
+  Serial.print("UID Terdeteksi: ");
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    Serial.print(rfid.uid.uidByte[i], HEX);
+    Serial.print(" ");
+  }
+  Serial.println();
+
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] != allowedUID[i]) {
+      rfid.PICC_HaltA();
+      return false;
+    }
+  }
+
+  rfid.PICC_HaltA();
+  return true;
+}
+
+void kedipkanLED(int pin, int durasiDetik) {
+  for (int i = 0; i < durasiDetik * 2; i++) {
+    digitalWrite(pin, !digitalRead(pin));
+    delay(250);
+  }
+}
